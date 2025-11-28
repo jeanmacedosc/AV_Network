@@ -10,12 +10,12 @@
 #include <iostream>
 #include <fstream>
 
+#include "protocol/can.hpp"
+#include "protocol/ethernet.hpp"
+#include "protocol/ieee1722.hpp"
+#include "protocol/ring_buffer.hpp"
 #include "observer/conditional_data_observer.hpp"
 #include "observer/conditionally_data_observed.h"
-#include "definitions/can.hpp"
-#include "definitions/ethernet.hpp"
-#include "definitions/ieee1722.hpp"
-#include "definitions/ring_buffer.hpp"
 
 // RX/TX Definitions
 using CanRxObserver = ConditionalDataObserver<Can::Frame, void>;
@@ -30,7 +30,7 @@ class Gateway :
     public EthTxSubject 
 {
 public:
-    const static Ethernet::EthType GW_PROTOCOL = 0x88b5; 
+    const static Ethernet::EthType GW_PROTOCOL = 0x22F0; 
 
     enum class Priority {
         CRITICAL = 0,

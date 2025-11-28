@@ -8,6 +8,8 @@
 #include <unistd.h>
 #include <cstring>
 #include <iostream>
+#include <poll.h>
+#include <cerrno>
 
 CanIface::CanIface(const char* iface_name) 
     : _iface_name(iface_name), _running(false)
@@ -36,13 +38,15 @@ CanIface::CanIface(const char* iface_name)
     setsockopt(socket_fd, SOL_CAN_RAW, CAN_RAW_FD_FRAMES, &enable_fd, sizeof(enable_fd));
 }
 
-CanIface::~CanIface() {
+CanIface::~CanIface()
+{
     _running = false;
     if (socket_fd >= 0) close(socket_fd);
     if (_receive_thread.joinable()) _receive_thread.join();
 }
 
-int CanIface::start() {
+int CanIface::start()
+{
     if (!_running) {
         _running = true;
         _receive_thread = std::thread(&CanIface::receive_loop, this);
@@ -51,7 +55,8 @@ int CanIface::start() {
 }
 
 // TX Path: Gateway -> CAN Bus
-void CanIface::update(ConditionallyDataObserved<Can::Frame, void>* obs, Can::Frame* frame) {
+void CanIface::update(ConditionallyDataObserved<Can::Frame, void>* obs, Can::Frame* frame)
+{
     if (!frame) return;
 
     struct canfd_frame k_frame;
@@ -69,24 +74,46 @@ void CanIface::update(ConditionallyDataObserved<Can::Frame, void>* obs, Can::Fra
 }
 
 // RX Path: CAN Bus -> Gateway
-void CanIface::receive_loop() {
+void CanIface::receive_loop()
+{
     struct canfd_frame frame;
+    
+    struct pollfd pfd;
+    pfd.fd = socket_fd;
+    pfd.events = POLLIN;
 
     while (_running) {
-        int n_bytes = read(socket_fd, &frame, sizeof(struct canfd_frame));
+        // the kernel wakes us up when there is data to read. 1s wake up timeout
+        int ret = poll(&pfd, 1, 1000);
 
-        if (n_bytes < 0) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10)); 
-            continue;
+        if (ret < 0) {
+            if (errno == EINTR) continue;
+            perror("CanIface: Poll error");
+            break;
         }
 
-        Can::Frame app_frame;
-        app_frame.id = frame.can_id;
-        app_frame.len = frame.len; 
-        
-        size_t copy_len = (frame.len > 64) ? 64 : frame.len;
-        std::copy(std::begin(frame.data), std::begin(frame.data) + copy_len, app_frame.data.begin());
+        // timeout (no data for 1s)
+        if (ret == 0) {
+            continue; 
+        }
 
-        this->notify(&app_frame);
+        if (pfd.revents & POLLIN) {
+            int n_bytes = read(socket_fd, &frame, sizeof(struct canfd_frame));
+
+            if (n_bytes < 0) {
+                if (errno == EAGAIN) continue;
+                perror("CanIface: Read error");
+                continue;
+            }
+
+            Can::Frame app_frame;
+            app_frame.id = frame.can_id;
+            app_frame.len = frame.len; 
+            
+            size_t copy_len = (frame.len > 64) ? 64 : frame.len;
+            std::copy(std::begin(frame.data), std::begin(frame.data) + copy_len, app_frame.data.begin());
+
+            this->notify(&app_frame);
+        }
     }
 }

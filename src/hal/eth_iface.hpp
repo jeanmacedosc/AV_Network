@@ -7,7 +7,7 @@
 
 #include "observer/conditionally_data_observed.h"
 #include "observer/conditional_data_observer.hpp"
-#include "definitions/ethernet.hpp"
+#include "protocol/ethernet.hpp"
 
 /**
  * @brief Ethernet Interface using MMAP for 10BASE-T1S communication

@@ -8,7 +8,7 @@
 
 #include "observer/conditionally_data_observed.h"
 #include "observer/conditional_data_observer.hpp"
-#include "definitions/can.hpp"
+#include "protocol/can.hpp"
 
 namespace Can { struct Frame; }
 

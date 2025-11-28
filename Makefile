@@ -1,59 +1,50 @@
+# Makefile for VisionFive 2 Gateway (RISC-V)
+
 CXX         := riscv64-linux-gnu-g++
 TARGET_NAME := gateway_riscv
-INJECTOR_NAME := injector
+SETUP_NAME  := can_setup
 
 STAGING_DIR := staging
 OS_DIR      := os
 BUILD_DIR   := build_riscv
 
-TARGET      := $(STAGING_DIR)/bin/$(TARGET_NAME)
-INJECTOR_BIN := $(STAGING_DIR)/bin/$(INJECTOR_NAME)
+TARGET_BIN  := $(STAGING_DIR)/bin/$(TARGET_NAME)
+SETUP_BIN   := $(STAGING_DIR)/bin/$(SETUP_NAME)
 CPIO_IMG    := $(OS_DIR)/initramfs.cpio
 
-ARCH_FLAGS := -march=rv64gc_zba_zbb -mtune=sifive-u74
-CXXFLAGS   := -std=c++17 -O3 -flto -static -pthread -Wall $(ARCH_FLAGS)
-INCLUDES   := -I. -Isrc
+ARCH_FLAGS  := -march=rv64gc_zba_zbb -mtune=sifive-u74
+CXXFLAGS    := -std=c++17 -O3 -flto -static -pthread -Wall $(ARCH_FLAGS)
 
-CAN_SETUP_NAME := can_setup
-CAN_SETUP_BIN  := $(STAGING_DIR)/bin/$(CAN_SETUP_NAME)
-CAN_SETUP_SRC  := src/can_setup.cpp
+INCLUDES    := -Iinclude -Isrc -Isrc/hal -Isrc/observer
 
-SRCS_ROOT := main.cpp
-SRCS_SRC  := $(filter-out src/injector.cpp src/can_setup.cpp, $(wildcard src/*.cpp))
-SRCS_GW   := $(SRCS_ROOT) $(SRCS_SRC)
+SRCS_GW     := src/main.cpp \
+               src/gateway.cpp \
+               $(wildcard src/hal/*.cpp)
 
-SRCS_INJ  := src/injector.cpp
+SRCS_SETUP  := src/can_setup.cpp
 
-OBJS_GW   := $(SRCS_GW:%.cpp=$(BUILD_DIR)/%.o)
-OBJS_INJ  := $(SRCS_INJ:%.cpp=$(BUILD_DIR)/%.o)
+OBJS_GW     := $(SRCS_GW:%.cpp=$(BUILD_DIR)/%.o)
 
 .PHONY: all clean initramfs
 
-all: $(TARGET) $(INJECTOR_BIN) $(CAN_SETUP_BIN) initramfs
+all: $(TARGET_BIN) $(SETUP_BIN) initramfs
 
-# Gateway
-$(TARGET): $(OBJS_GW)
+$(TARGET_BIN): $(OBJS_GW)
 	@echo "[RISC-V] Linking Gateway to $@"
 	@mkdir -p $(dir $@)
 	@$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $(OBJS_GW)
 
-# Injector
-$(INJECTOR_BIN): $(OBJS_INJ)
-	@echo "[RISC-V] Linking Injector to $@"
-	@mkdir -p $(dir $@)
-	@$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $(OBJS_INJ)
-
-$(CAN_SETUP_BIN): $(CAN_SETUP_SRC)
+$(SETUP_BIN): $(SRCS_SETUP)
 	@echo "[RISC-V] Compiling CAN Setup Tool..."
 	@mkdir -p $(dir $@)
-	@$(CXX) $(CXXFLAGS) $(CAN_SETUP_SRC) -o $@
+	@$(CXX) $(CXXFLAGS) $(INCLUDES) $(SRCS_SETUP) -o $@
 
 $(BUILD_DIR)/%.o: %.cpp
 	@mkdir -p $(dir $@)
 	@echo "[RISC-V] Compiling $<"
 	@$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
 
-initramfs: $(TARGET) $(INJECTOR_BIN)
+initramfs: $(TARGET_BIN) $(SETUP_BIN)
 	@echo "[RISC-V] Packing initramfs.cpio..."
 	@mkdir -p $(OS_DIR)
 	cd $(STAGING_DIR) && find . | cpio -H newc -o > ../$(OS_DIR)/initramfs.cpio
@@ -62,4 +53,4 @@ initramfs: $(TARGET) $(INJECTOR_BIN)
 clean:
 	@echo "[RISC-V] Cleaning..."
 	@rm -rf $(BUILD_DIR)
-	@rm -f $(TARGET) $(INJECTOR_BIN) $(CPIO_IMG)
+	@rm -f $(TARGET_BIN) $(SETUP_BIN) $(CPIO_IMG)

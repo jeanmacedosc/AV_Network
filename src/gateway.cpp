@@ -29,6 +29,7 @@ void Gateway::start() {
         if (_log_file.is_open()) {
             _log_file << "CAN_ID,Priority,Ingress_NS,Egress_NS,Latency_US\n";
         }
+
         _running = true;
         _worker_thread = std::thread(&Gateway::egress_loop, this);
     }
@@ -44,6 +45,7 @@ void Gateway::stop() {
     if (_log_file.is_open()) {
         _log_file.close();
     }
+
 }
 
 void Gateway::log_latency(Can::Id id, std::chrono::system_clock::time_point ingress) {
@@ -66,7 +68,8 @@ void Gateway::log_latency(Can::Id id, std::chrono::system_clock::time_point ingr
               << prio << ","
               << ingress_ns << ","
               << egress_ns << ","
-              << latency_us << "\n" << std::endl;
+              << latency_us << "\n" << "\n";
+
 }
 
 // ----------------------------------------------------------------------
@@ -145,6 +148,9 @@ void Gateway::update(EthTxSubject* obs, Ethernet::EthType c, Ethernet::Frame* fr
     }
 }
 
+/**
+ * @brief Returns the configured Priority for a specified CAN Id
+ */
 Gateway::Priority Gateway::resolve_priority(Can::Id id) {
     for (const auto& range : _priority_map_ranges) {
         if (id >= range.start && id <= range.end) {
@@ -158,6 +164,9 @@ Gateway::Priority Gateway::resolve_priority(Can::Id id) {
 // Egress Logic (The Worker)
 // ----------------------------------------------------------------------
 
+/**
+ * @brief Thread to dispatch buffers to being sent in ETH interfaces (CAN -> 10BASE-T1S)
+ */
 void Gateway::egress_loop() {
     // 1518 bytes covers standard Ethernet MTU + headers
     uint8_t eth_buffer[1518]; 
@@ -165,7 +174,7 @@ void Gateway::egress_loop() {
     while (_running) {
         std::unique_lock<std::mutex> lock(_cv_mutex);
         
-        // waits for 2ms or till a notification for CRITICAL CAN comes
+        // waits for the configured MAX_LATENCY_WINDOW or till a notification for CRITICAL CAN comes
         _cv.wait_for(lock, MAX_LATENCY_WINDOW);
 
         if (!_running) break;
@@ -189,6 +198,7 @@ void Gateway::pack_and_send_burst(uint8_t* buffer) {
     size_t current_len = eth_header_len + Ieee1722::HEADER_SIZE;
     int msg_count = 0;
 
+    // fills a buffer catching CAN frames in the queue by priority
     for (int p = 0; p < (int)Priority::COUNT; p++) {
         RingBuffer<Can::Frame, 1024>* queue = nullptr;
         
@@ -201,7 +211,7 @@ void Gateway::pack_and_send_burst(uint8_t* buffer) {
             if (!opt_frame) break;
 
             // We log exactly at the moment the frame leaves the buffer to be packed
-            log_latency(opt_frame->id, opt_frame->ingress_timestamp);
+            // log_latency(opt_frame->id, opt_frame->ingress_timestamp);
 
             // serialize and advance ptr
             size_t written = serialize_can_message(payload_ptr, *opt_frame);

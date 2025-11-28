@@ -1,5 +1,3 @@
-#include "eth_iface.hpp"
-
 #include <sys/socket.h>
 #include <linux/if_packet.h>
 #include <net/ethernet.h>
@@ -11,7 +9,9 @@
 #include <sys/mman.h>
 #include <poll.h>
 
-EthIface::EthIface(const char* iface_name) 
+#include "eth_iface.hpp"
+
+EthIface::EthIface(const char* iface_name)
     : _iface_name(iface_name), _running(false)
 {
     socket_fd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
@@ -34,14 +34,16 @@ EthIface::EthIface(const char* iface_name)
     }
 }
 
-EthIface::~EthIface() {
+EthIface::~EthIface()
+{
     _running = false;
     if (_receive_thread.joinable()) _receive_thread.join();
     teardown_rx_ring();
     if (socket_fd >= 0) close(socket_fd);
 }
 
-int EthIface::start() {
+int EthIface::start()
+{
     if (!_running) {
         _running = true;
         _receive_thread = std::thread(&EthIface::receive_loop_mmap, this);
@@ -49,7 +51,8 @@ int EthIface::start() {
     return 0;
 }
 
-void EthIface::setup_rx_ring() {
+void EthIface::setup_rx_ring()
+{
     int val = TPACKET_V2;
     if (setsockopt(socket_fd, SOL_PACKET, PACKET_VERSION, &val, sizeof(val)) < 0) {
         perror("EthIface: Setsockopt PACKET_VERSION failed");
@@ -89,7 +92,8 @@ void EthIface::setup_rx_ring() {
     }
 }
 
-void EthIface::teardown_rx_ring() {
+void EthIface::teardown_rx_ring()
+{
     if (_mmap_buffer) {
         munmap(_mmap_buffer, _mmap_size);
         _mmap_buffer = nullptr;

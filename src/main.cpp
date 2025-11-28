@@ -5,12 +5,27 @@
 #include <unistd.h>
 #include <sched.h>
 #include <pthread.h>
+#include <sys/mman.h>
 
-#include "can_iface.hpp"
-#include "eth_iface.hpp"
+#include "hal/can_iface.hpp"
+#include "hal/eth_iface.hpp"
 #include "gateway.hpp"
 
-void setup_realtime_env() {
+/**
+ * @details
+ * Binds the process to a specific CPU core to avoid preempts in cores
+ * that handles interrupts (what turns the cache cold) and a priority
+ * Real-Time scheduling with a high value setted
+ */
+void setup_realtime_env()
+{
+    // locking memory to prevent paging
+    if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0) {
+        perror("RT-Setup: Failed to lock memory (mlockall)");
+    } else {
+        std::cout << "RT-Setup: Memory locked (no paging)." << std::endl;
+    }
+
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
     CPU_SET(3, &cpuset); // select Core 3
