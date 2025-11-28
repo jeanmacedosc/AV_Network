@@ -1,0 +1,6 @@
+vision/*
+build_riscv/*
+build_x86/*
+.vscode/*
+scripts/*
+staging/*
