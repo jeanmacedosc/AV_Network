@@ -8,6 +8,9 @@
 #include <iostream>
 #include <sys/mman.h>
 #include <poll.h>
+#include <sys/ioctl.h>
+#include <unordered_map>
+#include <array>
 
 #include "eth_iface.hpp"
 
@@ -103,6 +106,20 @@ void EthIface::teardown_rx_ring()
 
 // TX Path: Gateway -> 10BASE-T1S
 void EthIface::update(ConditionallyDataObserved<Ethernet::Frame, Ethernet::EthType>* obs, Ethernet::EthType c, Ethernet::Frame* frame) {
+    // Cache the MAC address to avoid making ioctl system calls in the hot path
+    static std::unordered_map<std::string, std::array<uint8_t, 6>> mac_cache;
+    if (mac_cache.find(_iface_name) == mac_cache.end()) {
+        std::array<uint8_t, 6> mac = {0};
+        struct ifreq ifr;
+        memset(&ifr, 0, sizeof(ifr));
+        strncpy(ifr.ifr_name, _iface_name.c_str(), IFNAMSIZ - 1);
+        if (ioctl(socket_fd, SIOCGIFHWADDR, &ifr) == 0) {
+            memcpy(mac.data(), ifr.ifr_hwaddr.sa_data, 6);
+        }
+        mac_cache[_iface_name] = mac;
+    }
+    memcpy(frame->header.shost.addr, mac_cache[_iface_name].data(), 6);
+
     struct sockaddr_ll sll;
     memset(&sll, 0, sizeof(sll));
     sll.sll_family = AF_PACKET;
