@@ -28,10 +28,10 @@ BURST_TMR=0x80
 NODE_ID=""
 NODE_IP=""
 
-# Path to the kernel module (relative to this script's repo root)
+# Path to the kernel module.
+# driver_setup/ lives alongside AV_Network/ in the home directory.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-KO_FILE="$REPO_ROOT/driver_setup/microchip_t1s.ko"
+KO_FILE="${HOME}/driver_setup/microchip_t1s.ko"
 
 # --------------------------------------------------------------------------
 # Argument parsing
