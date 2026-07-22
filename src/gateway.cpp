@@ -112,8 +112,8 @@ void Gateway::update(CanTxSubject* obs, Can::Frame* frame) {
     else if (prio == Priority::HIGH) queued = _high_queue.push(*frame);
     else queued = _low_queue.push(*frame);
 
-    // trigger egress if critical
-    if (queued && prio == Priority::CRITICAL) {
+    // trigger egress immediately for ALL frames to test raw latency
+    if (queued) {
         _cv.notify_one();
     }
 }
