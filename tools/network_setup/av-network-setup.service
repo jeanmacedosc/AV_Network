@@ -1,0 +1,22 @@
+[Unit]
+Description=10BASE-T1S Network Setup (AV_Network Experiment)
+# Run after basic network targets are up but we don't depend on network
+After=local-fs.target
+Wants=local-fs.target
+# Re-run if the USB adapter is plugged in after boot
+After=sys-subsystem-net-devices-eth1.device
+Wants=sys-subsystem-net-devices-eth1.device
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# --- CONFIGURE THESE FOR EACH NODE ---
+# Node 0 (Sender):   --node-id 0 --ip 192.168.10.11/24
+# Node 1 (Receiver): --node-id 1 --ip 192.168.10.12/24
+ExecStart=/home/lisha/AV_Network/tools/network_setup/setup_10bt1s.sh --node-id NODE_ID_PLACEHOLDER --ip IP_PLACEHOLDER
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
