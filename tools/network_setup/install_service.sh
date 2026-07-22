@@ -43,6 +43,14 @@ SETUP_SCRIPT="$SCRIPT_DIR/setup_10bt1s.sh"
 SERVICE_TEMPLATE="$SCRIPT_DIR/av-network-setup.service"
 SERVICE_DEST="/etc/systemd/system/av-network-setup.service"
 
+# Detect the actual user home even when called with sudo.
+# systemd does not set $HOME for services — we must embed it explicitly.
+ACTUAL_USER="${SUDO_USER:-$USER}"
+ACTUAL_HOME=$(getent passwd "$ACTUAL_USER" | cut -d: -f6)
+if [[ -z "$ACTUAL_HOME" ]]; then
+    ACTUAL_HOME="/home/$ACTUAL_USER"
+fi
+
 echo "=============================================="
 echo " Installing av-network-setup service"
 echo " Node ID : $NODE_ID"
@@ -57,10 +65,13 @@ sed \
     -e "s|NODE_ID_PLACEHOLDER|$NODE_ID|g" \
     -e "s|IP_PLACEHOLDER|$NODE_IP|g" \
     -e "s|ExecStart=.*setup_10bt1s.sh|ExecStart=$SETUP_SCRIPT|g" \
-    "$SERVICE_TEMPLATE" > "$SERVICE_DEST"
+    "$SERVICE_TEMPLATE" \
+| sed "/^ExecStart=/i Environment=HOME=$ACTUAL_HOME" \
+> "$SERVICE_DEST"
 
 echo ""
 echo "[1/3] Service file written to: $SERVICE_DEST"
+echo "      User home: $ACTUAL_HOME"
 cat "$SERVICE_DEST"
 
 # Reload systemd and enable service

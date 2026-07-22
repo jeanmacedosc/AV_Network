@@ -102,7 +102,22 @@ for dev in $DEVICES; do
 done
 
 echo "  Driver loaded OK."
-sleep 1   # Give the kernel a moment to enumerate the interface
+
+# Wait for the interface to be enumerated by the kernel.
+# USB adapters can take a few seconds to appear after the module is loaded.
+echo "  Waiting for $IFACE to appear..."
+WAIT_TIMEOUT=15
+ELAPSED=0
+until ip link show "$IFACE" &>/dev/null; do
+    if [[ $ELAPSED -ge $WAIT_TIMEOUT ]]; then
+        echo "[ERROR] Interface $IFACE did not appear after ${WAIT_TIMEOUT}s."
+        echo "        Available interfaces: $(ip -o link show | awk -F': ' '{print $2}' | tr '\n' ' ')"
+        exit 1
+    fi
+    sleep 1
+    ELAPSED=$((ELAPSED + 1))
+done
+echo "  $IFACE appeared after ${ELAPSED}s."
 
 # --------------------------------------------------------------------------
 # Step 2: Bring interface up
