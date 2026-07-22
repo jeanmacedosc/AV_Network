@@ -87,6 +87,10 @@ private:
 
     std::ofstream _log_file;
     void log_latency(Can::Id id, std::chrono::system_clock::time_point ingress);
+
+    // End-to-End latency log (Node 1 only, requires PTP-synced clocks)
+    std::ofstream _e2e_log_file;
+    void log_e2e_latency(Can::Id id, std::chrono::system_clock::time_point tx_ingress);
 };
 
 #endif // GATEWAY_HPP

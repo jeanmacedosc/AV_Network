@@ -24,10 +24,13 @@ void Gateway::configure_routes() {
 void Gateway::start() {
     if (!_running) {
         _log_file.open("gateway_latency.csv", std::ios::out | std::ios::trunc);
-        
-        // csv header
         if (_log_file.is_open()) {
             _log_file << "CAN_ID,Priority,Ingress_NS,Egress_NS,Latency_US\n";
+        }
+
+        _e2e_log_file.open("e2e_latency.csv", std::ios::out | std::ios::trunc);
+        if (_e2e_log_file.is_open()) {
+            _e2e_log_file << "CAN_ID,Priority,TX_Ingress_NS,RX_Egress_NS,E2E_Latency_US\n";
         }
 
         _running = true;
@@ -46,30 +49,46 @@ void Gateway::stop() {
         _log_file.close();
     }
 
+    if (_e2e_log_file.is_open()) {
+        _e2e_log_file.close();
+    }
 }
 
 void Gateway::log_latency(Can::Id id, std::chrono::system_clock::time_point ingress) {
     if (!_log_file.is_open()) return;
 
     auto now = std::chrono::system_clock::now();
-    
-    // calculate latency in ms
     auto latency_us = std::chrono::duration_cast<std::chrono::microseconds>(now - ingress).count();
-
-    // get raw nanoseconds for plotting details later
     auto ingress_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(ingress.time_since_epoch()).count();
-    auto egress_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
-
-    // determines priority for coloring the graph later
+    auto egress_ns  = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
     int prio = (int)resolve_priority(id);
 
-    // Format: ID, Prio, Ingress, Egress, Latency
     _log_file << "0x" << std::hex << id << std::dec << ","
               << prio << ","
               << ingress_ns << ","
               << egress_ns << ","
-              << latency_us << "\n" << "\n";
+              << latency_us << "\n";
+}
 
+/**
+ * @brief Logs End-to-End latency: time from CAN ingress at Node 0 (TX)
+ *        to CAN egress at Node 1 (RX). Requires PTP clock synchronization
+ *        between the two nodes so CLOCK_REALTIME is shared.
+ */
+void Gateway::log_e2e_latency(Can::Id id, std::chrono::system_clock::time_point tx_ingress) {
+    if (!_e2e_log_file.is_open()) return;
+
+    auto now = std::chrono::system_clock::now();
+    auto e2e_us = std::chrono::duration_cast<std::chrono::microseconds>(now - tx_ingress).count();
+    auto tx_ns  = std::chrono::duration_cast<std::chrono::nanoseconds>(tx_ingress.time_since_epoch()).count();
+    auto rx_ns  = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
+    int prio = (int)resolve_priority(id);
+
+    _e2e_log_file << "0x" << std::hex << id << std::dec << ","
+                  << prio << ","
+                  << tx_ns << ","
+                  << rx_ns << ","
+                  << e2e_us << "\n";
 }
 
 // ----------------------------------------------------------------------
@@ -140,6 +159,10 @@ void Gateway::update(EthTxSubject* obs, Ethernet::EthType c, Ethernet::Frame* fr
         size_t bytes_read = deserialize_can_message(payload_ptr, can_frame);
         
         if (bytes_read == 0) break;
+
+        // Log E2E latency: tx_ingress came from Node 0, now is Node 1 reception.
+        // Requires PTP-synchronized CLOCK_REALTIME between both nodes.
+        log_e2e_latency(can_frame.id, can_frame.ingress_timestamp);
 
         // notifies all attached CAN interfaces
         this->CanTxSubject::notify(&can_frame);
@@ -286,10 +309,18 @@ size_t Gateway::deserialize_can_message(uint8_t* ptr, Can::Frame& f) {
     size_t total_acf_len = quadlets * 4;
 
     uint32_t id_word = ntohl(acf_msg->can_id_field);
-    
-    f.id = id_word & 0x7FF; 
-    
-    size_t header_overhead = 16; 
+
+    // Fix: mask for 29-bit Extended CAN ID (ORCA protocol uses extended frames).
+    // Previous value 0x7FF incorrectly truncated to 11-bit standard CAN ID.
+    f.id = id_word & 0x1FFFFFFF;
+
+    // Restore the original ingress timestamp that was embedded by Node 0.
+    // This is the TX-side timestamp used for E2E latency calculation.
+    // Requires PTP-synchronized CLOCK_REALTIME between the two nodes.
+    uint64_t ts_raw = __builtin_bswap64(acf_msg->ingress_timestamp);
+    f.ingress_timestamp = Can::Timestamp(std::chrono::nanoseconds(ts_raw));
+
+    size_t header_overhead = 16;
     if (total_acf_len > header_overhead) {
         f.len = total_acf_len - header_overhead;
         if (f.len > 64) f.len = 64; // Cap at CAN FD max
