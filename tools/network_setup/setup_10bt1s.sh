@@ -71,7 +71,22 @@ echo "=============================================="
 echo ""
 echo "[1/4] Loading microchip_t1s driver..."
 
-# Unbind devices currently using smsc95xx
+# At boot, the USB device may not have been enumerated by smsc95xx yet.
+# Wait until at least one device appears under it before proceeding.
+echo "  Waiting for USB device to be enumerated by smsc95xx..."
+USB_WAIT=30
+USB_ELAPSED=0
+until ls /sys/bus/usb/drivers/smsc95xx 2>/dev/null | grep -q "^[1-9]"; do
+    if [[ $USB_ELAPSED -ge $USB_WAIT ]]; then
+        echo "  [WARN] No devices found under smsc95xx after ${USB_WAIT}s, proceeding anyway..."
+        break
+    fi
+    sleep 1
+    USB_ELAPSED=$((USB_ELAPSED + 1))
+done
+echo "  USB device ready (${USB_ELAPSED}s elapsed)."
+
+# Capture devices currently bound to smsc95xx
 DEVICES=$(ls /sys/bus/usb/drivers/smsc95xx 2>/dev/null | grep "^[1-9]" || true)
 
 for dev in $DEVICES; do
