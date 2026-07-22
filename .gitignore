@@ -1,6 +1,11 @@
 vision/*
 build_riscv/*
 build_x86/*
+build_arm/*
 .vscode/*
 scripts/*
 staging/*
+.venv/
+*.pyc
+__pycache__/
+# NOTE: data/*.csv are intentionally tracked (CAN capture dataset)
