@@ -105,12 +105,13 @@ void Gateway::update(CanTxSubject* obs, Can::Frame* frame) {
     frame->ingress_timestamp = std::chrono::system_clock::now();
 
     // priority and queueing
+    // priority resolution (kept only for CSV logging purposes)
     Priority prio = resolve_priority(frame->id);
-    bool queued = false;
-
-    if (prio == Priority::CRITICAL) queued = _critical_queue.push(*frame);
-    else if (prio == Priority::HIGH) queued = _high_queue.push(*frame);
-    else queued = _low_queue.push(*frame);
+    
+    // PURE FIFO CONFIGURATION:
+    // Route ALL frames into a single global queue (_critical_queue)
+    // so they are processed in exact chronological order of arrival.
+    bool queued = _critical_queue.push(*frame);
 
     // trigger egress immediately for ALL frames to test raw latency
     if (queued) {
