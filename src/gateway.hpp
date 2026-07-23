@@ -40,7 +40,9 @@ public:
     };
 
     static constexpr std::chrono::milliseconds MAX_LATENCY_WINDOW {2};
-    static constexpr size_t MAX_BATCH_SIZE = 10;
+    // MAX_BATCH_SIZE: based on real CAN data (scope_17.csv), max burst is ~11 frames.
+    // 16 covers all burst scenarios within the 2ms window with margin.
+    static constexpr size_t MAX_BATCH_SIZE = 16;
 
 public:
     static Gateway* get_instance();
@@ -74,9 +76,13 @@ private:
     std::condition_variable _cv;
     std::mutex _cv_mutex;
 
-    RingBuffer<Can::Frame, 1024> _critical_queue;
-    RingBuffer<Can::Frame, 1024> _high_queue;
-    RingBuffer<Can::Frame, 1024> _low_queue;
+    // Buffer sizes based on real CAN traffic analysis (scope_17.csv):
+    // - 675 fps rate, 2ms window → avg 1.35 frames/window
+    // - Observed max burst: ~11 frames
+    // - 64 slots = 6x safety margin over max burst, saves ~180KB vs 1024
+    RingBuffer<Can::Frame, 64> _critical_queue;
+    RingBuffer<Can::Frame, 64> _high_queue;
+    RingBuffer<Can::Frame, 64> _low_queue;
 
     struct PriorityRange {
         Can::Id start;
@@ -91,6 +97,16 @@ private:
     // End-to-End latency log (Node 1 only, requires PTP-synced clocks)
     std::ofstream _e2e_log_file;
     void log_e2e_latency(Can::Id id, std::chrono::system_clock::time_point tx_ingress);
+
+    // Packet loss detection via IEEE 1722 sequence number tracking (Node 1 only)
+    // The AVTP header carries a 1-byte sequence counter (0-255, wraps around).
+    // Any gap > 1 between consecutive received seq numbers means packet loss.
+    uint8_t  _expected_seq  = 0;
+    bool     _seq_initialized = false;   // skip first packet (no expected yet)
+    uint64_t _total_rx_eth  = 0;
+    uint64_t _total_lost    = 0;
+    std::ofstream _loss_log_file;
+    void log_packet_loss(uint8_t expected, uint8_t received, uint8_t lost);
 };
 
 #endif // GATEWAY_HPP

@@ -33,6 +33,12 @@ void Gateway::start() {
             _e2e_log_file << "CAN_ID,Priority,TX_Ingress_NS,RX_Egress_NS,E2E_Latency_US\n";
         }
 
+        // Packet loss log — only meaningful on Node 1 (Receiver)
+        _loss_log_file.open("packet_loss.csv", std::ios::out | std::ios::trunc);
+        if (_loss_log_file.is_open()) {
+            _loss_log_file << "RX_ETH_Count,Expected_Seq,Received_Seq,Lost_In_Gap,Total_Lost\n";
+        }
+
         _running = true;
         _worker_thread = std::thread(&Gateway::egress_loop, this);
     }
@@ -51,6 +57,13 @@ void Gateway::stop() {
 
     if (_e2e_log_file.is_open()) {
         _e2e_log_file.close();
+    }
+
+    if (_loss_log_file.is_open()) {
+        // Print final summary to console before closing
+        std::cout << "[LOSS SUMMARY] Total ETH packets received: " << _total_rx_eth
+                  << " | Total CAN frames lost: " << _total_lost << "\n";
+        _loss_log_file.close();
     }
 }
 
@@ -90,6 +103,29 @@ void Gateway::log_e2e_latency(Can::Id id, std::chrono::system_clock::time_point 
                   << rx_ns << ","
                   << e2e_us << "\n";
 }
+
+/**
+ * @brief Logs a packet loss event detected via IEEE 1722 sequence number gap.
+ *        Called on Node 1 (Receiver) whenever received_seq != expected_seq.
+ *        Loss count is the number of ETH packets (bursts) dropped, NOT
+ *        individual CAN frames (one ETH packet may carry up to MAX_BATCH_SIZE frames).
+ */
+void Gateway::log_packet_loss(uint8_t expected, uint8_t received, uint8_t lost) {
+    if (_loss_log_file.is_open()) {
+        _loss_log_file << _total_rx_eth << ","
+                       << static_cast<int>(expected) << ","
+                       << static_cast<int>(received) << ","
+                       << static_cast<int>(lost) << ","
+                       << _total_lost << "\n";
+        _loss_log_file.flush(); // ensure it's written immediately
+    }
+    std::cerr << "[LOSS] ETH#" << _total_rx_eth
+              << " | Seq esperado: "  << static_cast<int>(expected)
+              << " | Recebido: "      << static_cast<int>(received)
+              << " | Pacotes perdidos nesse gap: " << static_cast<int>(lost)
+              << " | Total perdidos: " << _total_lost << "\n";
+}
+
 
 // ----------------------------------------------------------------------
 // Gateway RX Logic
@@ -139,6 +175,27 @@ void Gateway::update(EthTxSubject* obs, Ethernet::EthType c, Ethernet::Frame* fr
         // std::cerr << "Gateway: Drop non-ACF packet" << std::endl;
         return;
     }
+
+    // ---- Packet Loss Detection (Node 1 / Receiver only) ----
+    // Extract the 1-byte sequence counter from the AVTP header.
+    // The seq field is the lowest byte of the subtype_data word.
+    uint8_t received_seq = static_cast<uint8_t>(ntohl(avtp->subtype_data) & 0xFF);
+    _total_rx_eth++;
+
+    if (!_seq_initialized) {
+        // First packet: just record the starting sequence, nothing to compare yet.
+        _seq_initialized = true;
+    } else {
+        // Unsigned subtraction handles the 0→255 wrap-around correctly.
+        uint8_t gap = received_seq - _expected_seq;
+        if (gap > 1) {
+            uint8_t lost = gap - 1;
+            _total_lost += lost;
+            log_packet_loss(_expected_seq, received_seq, lost);
+        }
+    }
+    _expected_seq = static_cast<uint8_t>(received_seq + 1);
+    // ---------------------------------------------------------
 
     // parsing ACF Common Header
     auto* acf = reinterpret_cast<Ieee1722::AcfCommonHeader*>(buffer + eth_header_len + sizeof(Ieee1722::AvtpCommonHeader));
