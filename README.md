@@ -144,7 +144,36 @@ To analyze End-to-End latency consistently, the Gateway nodes must share a commo
   * **Constraint:** Due to hardware constraints on certain interfaces, **Software Timestamping** (`-S`) may be required. A jitter floor of approximately **50µs** is expected and must be accounted for in the analysis.
   * **Command:** `sudo ptp4l -i enp2s0 -S -m -2`
 
-**Command to initialize Master (x86 Host):**
+### Automated Experiment Scripts (Raspberry Pi)
+
+For the Raspberry Pi topology, two interactive bash scripts (`run_node0.sh` and `run_node1.sh`) are provided in the root directory to automate the entire experiment lifecycle, including network setup, PTP synchronization, Gateway execution, and CAN simulation.
+
+1.  **Run Receiver (Node 1):**
+    ```bash
+    chmod +x run_node1.sh
+    ./run_node1.sh
+    ```
+2.  **Run Sender (Node 0):**
+    ```bash
+    chmod +x run_node0.sh
+    ./run_node0.sh
+    ```
+    *Note: Do NOT press ENTER to start the CAN simulator on Node 0 until PTP is fully synchronized on Node 1.*
+
+### Verifying PTP Synchronization (Golden Lock)
+
+Before starting the CAN simulation, it is critical to ensure that the PTP hardware clocks have stabilized and the Linux system clock (`CLOCK_REALTIME`) is perfectly locked to the PHC. Failure to do so will result in artificial "clock step" artifacts in the End-to-End latency results.
+
+On Node 1 (Receiver), monitor the `phc2sys` logs:
+```bash
+tail -f /tmp/phc2sys.log
+```
+**What to look for:**
+*   Wait for the `offset` value to drop and stabilize.
+*   A "Golden Lock" is achieved when the `offset` consistently oscillates between **-50 and +50 nanoseconds** (sub-microsecond precision).
+*   Once this state is reached, it is safe to start the CAN simulator on Node 0.
+
+-----
 
 ```bash
 # -i <interface> | -S (Software Timestamping) | -m (Print messages) | -2 (Layer 2)
