@@ -1,7 +1,7 @@
 
-# Soft-Real-Time Priority-Aware Zonal Gateway (RISC-V)
+# Soft-Real-Time Priority-Aware Zonal Gateway
 
-This project implements a software-defined Zonal Gateway on the RISC-V architecture (VisionFive 2). It bridges legacy Controller Area Network (CAN) buses with high-speed 10BASE-T1S Automotive Ethernet, utilizing IEEE 1722 ACF encapsulation and priority-aware scheduling to ensure deterministic behavior for critical control signals.
+This project implements a software-defined Zonal Gateway supporting multiple architectures including **ARM (Raspberry Pi 4/5)** and **RISC-V (VisionFive 2)**. It bridges legacy Controller Area Network (CAN) buses with high-speed 10BASE-T1S Automotive Ethernet, utilizing IEEE 1722 ACF encapsulation and priority-aware scheduling to ensure deterministic behavior for critical control signals.
 
 ## 1\. System Architecture
 
@@ -49,10 +49,18 @@ To achieve Soft-Real-Time performance on a standard Linux kernel, the following 
 
 ## 3\. Environment Setup
 
-### Prerequisites
+### Compilation
 
-Ensure the host machine has the necessary RISC-V toolchain installed for cross-compilation.
+**Option A: Native Compilation (Raspberry Pi / ARM)**
+For native development on standard Linux distributions (e.g., Raspberry Pi OS):
+```bash
+sudo apt update
+sudo apt install build-essential git
+g++ -std=c++17 -O2 -pthread -Iinclude -Isrc -Isrc/hal -Isrc/observer src/main.cpp src/gateway.cpp src/hal/can_iface.cpp src/hal/eth_iface.cpp -o gateway
+```
 
+**Option B: Cross-Compilation (VisionFive 2 / RISC-V)**
+Ensure the host machine has the necessary RISC-V toolchain installed for cross-compilation:
 ```bash
 sudo apt update
 sudo apt install \
@@ -89,29 +97,52 @@ sudo ethtool \
   burst-tmr 0x80
 ```
 
+### Running the Gateway
+
+The Gateway binary accepts the network interfaces as arguments. The C++ code automatically detects whether an interface is CAN or Ethernet based on the `can` string prefix.
+
+**Scenario A: Raspberry Pi Topology (Virtual CAN + USB 10BASE-T1S)**
+In this environment, CAN traffic is simulated via a virtual interface (`vcan0`) and the 10BASE-T1S network is attached via a USB adapter (`eth1`).
+```bash
+# Run with root privileges to allow SCHED_FIFO real-time priority
+sudo ./gateway vcan0 eth1
+```
+
+**Scenario B: VisionFive 2 Topology (Physical CAN + Native/USB 10BASE-T1S)**
+In the original environment, a physical CAN interface (`can0` or `can1`) is bridged to the 10BASE-T1S interface (e.g., `enx9c956eb58a56`).
+```bash
+sudo ./gateway can0 enx9c956eb58a56
+```
+
 -----
 
 ## 4\. Test Methodology & Time Synchronization
 
-Due to the lack of physical resources to replicate a full zonal architecture, the evaluation relies on a simulated peer (Ubuntu x86) connected via the 10BASE-T1S bus acting as the backbone listener.
+The evaluation methodology supports different network topologies depending on available hardware. The End-to-End network traverses the 10BASE-T1S bus, while out-of-band standard Gigabit Ethernet is used to synchronize the system clocks.
 
 ### Metrics
 
 The Soft-Real-Time performance is evaluated using two main statistics:
 
-1.  **Gateway Latency:** The internal processing time from CAN frame arrival to IEEE 1722 packing.
-2.  **End-to-End Latency:** The total time from the Gateway ingress to the listener (Backbone) reception.
+1.  **Gateway Latency:** The internal processing time from CAN frame arrival to IEEE 1722 packing. Measures pure C++ performance.
+2.  **End-to-End Latency:** The total time from the Gateway CAN ingress to the listener Ethernet reception. Measures full network stack and USB/physical bus overhead.
 
 ### Time Synchronization (gPTP)
 
-To analyze End-to-End latency consistently, the Gateway and the Backbone listener must share a common time domain.
+To analyze End-to-End latency consistently, the Gateway nodes must share a common time domain.
 
   * **Mechanism:** IEEE 802.1AS (gPTP) via `linuxptp`.
-  * **Topology:**
-      * **Master:** Ubuntu x86 Peer.
-      * **Slave:** VisionFive 2 Gateway (Running cross-compiled static `ptp4l`).
-  * **Constraint:** Due to hardware constraints on the interface, **Software Timestamping** is used. A jitter floor of approximately **50µs** is expected and accounted for in the analysis.
-  * **Implementation:** The program uses `CLOCK_REALTIME` (System Clock) instead of `CLOCK_MONOTONIC` to ensure timestamps align with the PTP-synchronized time.
+  * **Implementation:** The program uses `CLOCK_REALTIME` (System Clock) to ensure timestamps align with the PTP-synchronized time.
+
+**Topology A: 2x Raspberry Pi (Hardware Timestamping)**
+  * **Master:** Node 0 (Sender) | **Slave:** Node 1 (Receiver)
+  * **Advantage:** Raspberry Pi Gigabit interfaces support **Hardware Timestamping**, allowing for sub-microsecond precision with virtually zero jitter.
+  * **Command:** `sudo ptp4l -i eth0 -m -2` (Master) / `sudo ptp4l -i eth0 -m -2 -s` (Slave).
+
+**Topology B: VisionFive 2 & x86 PC (Software Timestamping)**
+  * **Master:** Ubuntu x86 Peer | **Slave:** VisionFive 2 Gateway (Running cross-compiled static `ptp4l`).
+  * **Constraint:** Due to hardware constraints on certain interfaces, **Software Timestamping** (`-S`) may be required. A jitter floor of approximately **50µs** is expected and must be accounted for in the analysis.
+  * **Command:** `sudo ptp4l -i enp2s0 -S -m -2`
 
 **Command to initialize Master (x86 Host):**
 
