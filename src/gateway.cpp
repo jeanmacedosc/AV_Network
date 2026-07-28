@@ -88,13 +88,12 @@ void Gateway::log_latency(Can::Id id, std::chrono::system_clock::time_point ingr
  *        to CAN egress at Node 1 (RX). Requires PTP clock synchronization
  *        between the two nodes so CLOCK_REALTIME is shared.
  */
-void Gateway::log_e2e_latency(Can::Id id, std::chrono::system_clock::time_point tx_ingress) {
+void Gateway::log_e2e_latency(Can::Id id, std::chrono::system_clock::time_point tx_ingress, std::chrono::system_clock::time_point rx_eth_arrival) {
     if (!_e2e_log_file.is_open()) return;
 
-    auto now = std::chrono::system_clock::now();
-    auto e2e_us = std::chrono::duration_cast<std::chrono::microseconds>(now - tx_ingress).count();
+    auto e2e_us = std::chrono::duration_cast<std::chrono::microseconds>(rx_eth_arrival - tx_ingress).count();
     auto tx_ns  = std::chrono::duration_cast<std::chrono::nanoseconds>(tx_ingress.time_since_epoch()).count();
-    auto rx_ns  = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
+    auto rx_ns  = std::chrono::duration_cast<std::chrono::nanoseconds>(rx_eth_arrival.time_since_epoch()).count();
     int prio = (int)resolve_priority(id);
 
     _e2e_log_file << "0x" << std::hex << id << std::dec << ","
@@ -161,6 +160,10 @@ void Gateway::update(CanTxSubject* obs, Can::Frame* frame) {
 void Gateway::update(EthTxSubject* obs, Ethernet::EthType c, Ethernet::Frame* frame) {
     if (c != GW_PROTOCOL) return;
 
+    // Capture the exact moment the Ethernet frame hits the Gateway, before any unpacking.
+    // This isolates the pure CAN->ETH->Network->ETH latency.
+    auto eth_arrival_time = std::chrono::system_clock::now();
+
     uint8_t* buffer = reinterpret_cast<uint8_t*>(frame);
     size_t eth_header_len = sizeof(Ethernet::Header);
     
@@ -218,9 +221,9 @@ void Gateway::update(EthTxSubject* obs, Ethernet::EthType c, Ethernet::Frame* fr
         
         if (bytes_read == 0) break;
 
-        // Log E2E latency: tx_ingress came from Node 0, now is Node 1 reception.
+        // Log E2E latency: tx_ingress came from Node 0, rx_eth_arrival is Node 1 reception.
         // Requires PTP-synchronized CLOCK_REALTIME between both nodes.
-        log_e2e_latency(can_frame.id, can_frame.ingress_timestamp);
+        log_e2e_latency(can_frame.id, can_frame.ingress_timestamp, eth_arrival_time);
 
         // notifies all attached CAN interfaces
         this->CanTxSubject::notify(&can_frame);
