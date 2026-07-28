@@ -6,6 +6,8 @@ cleanup() {
     [ -n "$GATEWAY_PID" ] && sudo kill $GATEWAY_PID 2>/dev/null || true
     [ -n "$PTP4L_PID" ] && sudo kill $PTP4L_PID 2>/dev/null || true
     [ -n "$PHC2SYS_PID" ] && sudo kill $PHC2SYS_PID 2>/dev/null || true
+    echo "[INFO] Restaurando serviço de tempo (NTP da internet)..."
+    sudo systemctl start systemd-timesyncd 2>/dev/null || true
     echo "[INFO] Ambiente limpo."
 }
 trap cleanup EXIT
@@ -13,6 +15,12 @@ trap cleanup EXIT
 echo "============================================="
 echo "      INICIANDO NÓ 1 (RECEIVER / SLAVE)      "
 echo "============================================="
+
+echo "[INFO] Limpando processos zumbis de experimentos anteriores..."
+sudo killall ptp4l phc2sys gateway 2>/dev/null || true
+
+echo "[INFO] Desligando relógio da internet (NTP) para evitar brigas com o PTP..."
+sudo systemctl stop systemd-timesyncd 2>/dev/null || true
 
 echo "[1/4] Configurando IP do PTP (eth0)..."
 sudo ip addr add 10.0.0.2/24 dev eth0 2>/dev/null || true
