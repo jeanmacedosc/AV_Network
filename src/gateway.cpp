@@ -281,7 +281,7 @@ void Gateway::pack_and_send_burst(uint8_t* buffer) {
 
     // fills a buffer catching CAN frames in the queue by priority
     for (int p = 0; p < (int)Priority::COUNT; p++) {
-        RingBuffer<Can::Frame, 1024>* queue = nullptr;
+        RingBuffer<Can::Frame, 64>* queue = nullptr;
         
         if (p == (int)Priority::CRITICAL) queue = &_critical_queue;
         else if (p == (int)Priority::HIGH) queue = &_high_queue;
@@ -291,8 +291,9 @@ void Gateway::pack_and_send_burst(uint8_t* buffer) {
             auto opt_frame = queue->pop();
             if (!opt_frame) break;
 
-            // We log exactly at the moment the frame leaves the buffer to be packed
-            // log_latency(opt_frame->id, opt_frame->ingress_timestamp);
+            // Log internal gateway latency: time from CAN ingress to pack moment.
+            // This measures only C++ processing overhead, equivalent to VisionFive2 gw_with_opt measurements.
+            log_latency(opt_frame->id, opt_frame->ingress_timestamp);
 
             // serialize and advance ptr
             size_t written = serialize_can_message(payload_ptr, *opt_frame);

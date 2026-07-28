@@ -1,4 +1,4 @@
-﻿import pandas as pd
+import pandas as pd
 import matplotlib.pyplot as plt
 import argparse
 import sys
@@ -127,13 +127,99 @@ def analyze_packet_loss(loss_file):
     print(f"[+] Grafico de perdas acumuladas salvo como: {out_loss_acc}")
 
 
+def analyze_gateway_latency(gw_file):
+    """Analyzes gateway_latency.csv - internal C++ processing time only.
+    Equivalent to VisionFive2 gw_with_opt.csv measurements for direct comparison."""
+    if not os.path.exists(gw_file):
+        print(f"\n[INFO] Arquivo {gw_file} nao encontrado. Verifique se o log_latency esta habilitado no gateway.cpp")
+        return
+
+    df = pd.read_csv(gw_file)
+    if df.empty:
+        print("\n[INFO] gateway_latency.csv esta vazio.")
+        return
+
+    df["Latency_US"] = pd.to_numeric(df["Latency_US"], errors="coerce")
+    df = df.dropna(subset=["Latency_US"])
+
+    # Filter: only valid positive latencies under 5ms (gateway should never take more)
+    df = df[(df["Latency_US"] >= 0) & (df["Latency_US"] < 5000)]
+
+    mean_lat   = df["Latency_US"].mean()
+    median_lat = df["Latency_US"].median()
+    min_lat    = df["Latency_US"].min()
+    max_lat    = df["Latency_US"].max()
+    std_lat    = df["Latency_US"].std()
+    p25_lat    = df["Latency_US"].quantile(0.25)
+    p50_lat    = df["Latency_US"].quantile(0.50)
+    p75_lat    = df["Latency_US"].quantile(0.75)
+    p90_lat    = df["Latency_US"].quantile(0.90)
+    p95_lat    = df["Latency_US"].quantile(0.95)
+    p99_lat    = df["Latency_US"].quantile(0.99)
+
+    print("\n" + "="*44)
+    print(" LATENCIA INTERNA DO GATEWAY (us)")
+    print(" (equivalente ao gw_with_opt.csv do VisionFive2)")
+    print("="*44)
+    print(f" Total de frames     : {len(df)}")
+    print(f" Min                 : {min_lat:.2f} us")
+    print(f" Max                 : {max_lat:.2f} us")
+    print(f" Jitter (Std Dev)    : {std_lat:.2f} us")
+    print("-"*44)
+    print(f" 25% are lower than  : {p25_lat:.2f} us")
+    print(f" 50% are lower than  : {p50_lat:.2f} us  (Median)")
+    print(f" 75% are lower than  : {p75_lat:.2f} us")
+    print(f" 90% are lower than  : {p90_lat:.2f} us")
+    print(f" 95% are lower than  : {p95_lat:.2f} us")
+    print(f" 99% are lower than  : {p99_lat:.2f} us")
+    print("="*44)
+
+    # Plot matching VisionFive2 style
+    fig, ax = plt.subplots(figsize=(11, 6))
+
+    # Histogram
+    n, bins, patches = ax.hist(df["Latency_US"], bins=60,
+                                color="steelblue", alpha=0.6, edgecolor=None)
+
+    # KDE curve overlay (like VisionFive2 graph)
+    try:
+        from scipy.stats import gaussian_kde
+        import numpy as np
+        kde = gaussian_kde(df["Latency_US"], bw_method=0.3)
+        x_range = np.linspace(df["Latency_US"].min(), df["Latency_US"].max(), 500)
+        kde_vals = kde(x_range) * len(df) * (bins[1] - bins[0])
+        ax.plot(x_range, kde_vals, color="navy", linewidth=2)
+    except ImportError:
+        pass  # scipy optional
+
+    # Reference lines (same as VisionFive2 graph)
+    ax.axvline(mean_lat,   color="red",    linestyle="--", linewidth=1.5,
+               label=f"Mean: {mean_lat:.1f}\u03bcs")
+    ax.axvline(median_lat, color="green",  linestyle="-",  linewidth=1.5,
+               label=f"Median: {median_lat:.1f}\u03bcs")
+    ax.axvline(p99_lat,    color="orange", linestyle=":",  linewidth=1.5,
+               label=f"99%: {p99_lat:.1f}\u03bcs")
+
+    ax.set_title(f"Gateway Latency Distribution\n(Source: {os.path.basename(gw_file)})")
+    ax.set_xlabel("Latency (microseconds)")
+    ax.set_ylabel("Packet Count")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+
+    out_gw = "gateway_latency_distribution.png"
+    plt.savefig(out_gw, dpi=150, bbox_inches="tight")
+    print(f"\n[+] Grafico do gateway salvo como: {out_gw}")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Analisa latencia E2E e perda de pacotes do experimento ORCA/10BASE-T1S"
     )
-    parser.add_argument("--file",      default="e2e_latency.csv", help="CSV de latencia E2E")
-    parser.add_argument("--loss-file", default="packet_loss.csv", help="CSV de perda de pacotes")
+    parser.add_argument("--file",      default="e2e_latency.csv",      help="CSV de latencia E2E")
+    parser.add_argument("--loss-file", default="packet_loss.csv",      help="CSV de perda de pacotes")
+    parser.add_argument("--gw-file",   default="gateway_latency.csv",  help="CSV de latencia interna do gateway")
     args = parser.parse_args()
 
     analyze_latency(args.file)
     analyze_packet_loss(args.loss_file)
+    analyze_gateway_latency(args.gw_file)
