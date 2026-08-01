@@ -54,7 +54,7 @@ def create_plot(data_series, title, xlabel, output_filename, color, plot_median=
     plt.title(title, fontsize=12)
     plt.xlabel(xlabel)
     plt.ylabel("Packet Count")
-    plt.legend()
+    plt.legend(loc='upper left')
     
     # Text box summary (top right)
     textstr = f"Count: {count}\nMean: {mean_val:.2f} \u03bcs\nJitter: {jitter:.2f} \u03bcs"
