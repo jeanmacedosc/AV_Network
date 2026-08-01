@@ -57,7 +57,7 @@ def create_plot(data_series, title, xlabel, output_filename, color, plot_median=
     plt.legend()
     
     # Text box summary (top right)
-    textstr = f"Count: {count}\nMean: {mean_val:.2f} \u03bcs\nJitter: {jitter:.2f} \u03bcs\n99%: {p99_val:.2f} \u03bcs"
+    textstr = f"Count: {count}\nMean: {mean_val:.2f} \u03bcs\nJitter: {jitter:.2f} \u03bcs"
     props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
     plt.gca().text(0.95, 0.95, textstr, transform=plt.gca().transAxes, fontsize=9,
             verticalalignment='top', horizontalalignment='right', bbox=props)
@@ -110,7 +110,7 @@ def main():
         print_statistics("Latency Statistics (\u03bcs)", df_e2e['E2E_Latency_US'])
         create_plot(
             data_series=df_e2e['E2E_Latency_US'],
-            title="End-to-End Latency Distribution\n(Gateway -> Host)",
+            title="End-to-End Latency Distribution",
             xlabel="Latency (microseconds)",
             output_filename=os.path.join(base_dir, 'results', 'e2e_latency_plot.png'),
             color='darkblue',
